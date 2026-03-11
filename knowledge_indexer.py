@@ -49,7 +49,7 @@ INDEX_CONFIG = {
         "description": "Scripts operacionais do KAIROS",
     },
     "agents": {
-        "paths": [".agent/", ".antigravity/", "squads/"],
+        "paths": [".agent/", ".antigravity/", "squads/", ".codex/"],
         "extensions": [".md", ".json"],
         "description": "Configuração de agentes e squads",
     },
@@ -69,11 +69,16 @@ INDEX_CONFIG = {
         "extensions": [".md"],
         "description": "Workflows de ativação de agentes",
     },
+    "aiox_core": {
+        "paths": [".aios-core/", "packages/", "bin/"],
+        "extensions": [".md", ".json", ".js", ".ts", ".py"],
+        "description": "Núcleo atualizado do KAIROS (AIOX, Opus Replicator, Codex)",
+    },
 }
 
 # Arquivos/diretórios para IGNORAR
 IGNORE_PATTERNS = {
-    "node_modules", ".git", ".aios-core", "package-lock.json",
+    "node_modules", ".git", "archive", "package-lock.json",
     "bun.lockb", ".env", "apex-conductor-main", ".gemini",
     "temp-mp-deploy", "releases", "logs",
 }

@@ -203,3 +203,42 @@ def get_loot_items(unlocked_only: bool = False) -> list[dict]:
     if unlocked_only:
         query = query.eq("is_unlocked", True)
     return query.execute().data or []
+
+
+# ─── Knowledge Brain ───────────────────────────────────────
+
+def search_knowledge(query: str, category: str | None = None, limit: int = 5) -> list[dict]:
+    """Busca no Knowledge Brain usando full-text search."""
+    try:
+        params: dict = {"search_query": query, "match_limit": limit}
+        if category:
+            params["match_category"] = category
+        resp = get_client().rpc("search_knowledge", params).execute()
+        return resp.data or []
+    except Exception as e:
+        logger.warning("Knowledge Brain search falhou: %s", e)
+        # Fallback: busca simples via ILIKE
+        try:
+            resp = get_client().table("knowledge_brain").select(
+                "file_path,file_name,category,summary,content_chunk,tags"
+            ).ilike("summary", f"%{query}%").limit(limit).execute()
+            return resp.data or []
+        except Exception:
+            return []
+
+
+def get_brain_context(query: str, max_chunks: int = 3) -> str:
+    """Retorna contexto do Knowledge Brain formatado para injeção em prompts."""
+    results = search_knowledge(query, limit=max_chunks)
+    if not results:
+        return ""
+
+    context_parts = ["--- KNOWLEDGE BRAIN CONTEXT ---"]
+    for r in results:
+        source = r.get("file_name", "unknown")
+        summary = r.get("summary", "")
+        chunk = r.get("content_chunk", "")
+        context_parts.append(f"\n[Fonte: {source}]\n{summary}\n{chunk[:2000]}")
+
+    context_parts.append("--- END CONTEXT ---\n")
+    return "\n".join(context_parts)

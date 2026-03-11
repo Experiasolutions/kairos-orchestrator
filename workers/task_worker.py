@@ -45,27 +45,42 @@ def _call_groq(prompt: str) -> str:
 
 
 def call_model(prompt: str, category: str = "", title: str = "", model_override: str | None = None) -> str:
-    """Chama o modelo apropriado com fallback automático."""
+    """Chama o modelo apropriado com fallback automático e contexto do Knowledge Brain."""
     model = model_override or route_model(category, title)
+
+    # Injetar contexto do Knowledge Brain (memória de elefante)
+    brain_context = db.get_brain_context(title or prompt, max_chunks=3)
+    if brain_context:
+        enriched_prompt = (
+            "Você é o KAIROS SKY, orquestrador pessoal do Gabriel Ferreira.\n"
+            "Use o contexto abaixo do Knowledge Brain para responder com precisão.\n\n"
+            f"{brain_context}\n"
+            f"Pergunta: {prompt}"
+        )
+    else:
+        enriched_prompt = (
+            "Você é o KAIROS SKY, orquestrador pessoal do Gabriel Ferreira.\n\n"
+            f"Pergunta: {prompt}"
+        )
 
     # Tentar Google primeiro
     if model != "groq":
         for attempt in range(3):  # 3 tentativas com rotação
             try:
-                return _call_google(prompt, model)
+                return _call_google(enriched_prompt, model)
             except Exception as e:
                 logger.warning("Tentativa %d falhou para %s: %s", attempt + 1, model, e)
 
         # Fallback para Groq
         logger.info("Google esgotado — fallback para Groq")
         try:
-            return _call_groq(prompt)
+            return _call_groq(enriched_prompt)
         except Exception as e:
             logger.error("Groq também falhou: %s", e)
             return f"⚠️ Todos os modelos falharam: {e}"
 
     # Groq direto
-    return _call_groq(prompt)
+    return _call_groq(enriched_prompt)
 
 
 def process_task(task: dict) -> dict:

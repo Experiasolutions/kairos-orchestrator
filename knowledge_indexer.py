@@ -70,9 +70,9 @@ INDEX_CONFIG = {
         "description": "Workflows de ativação de agentes",
     },
     "aiox_core": {
-        "paths": [".aios-core/", "packages/", "bin/"],
+        "paths": [".aios-core/", "packages/", "bin/", "tools/", "releases/"],
         "extensions": [".md", ".json", ".js", ".ts", ".py"],
-        "description": "Núcleo atualizado do KAIROS (AIOX, Opus Replicator, Codex)",
+        "description": "Núcleo atualizado do KAIROS (AIOX, Opus Replicator, Codex, OpenClaw)",
     },
 }
 
@@ -80,7 +80,7 @@ INDEX_CONFIG = {
 IGNORE_PATTERNS = {
     "node_modules", ".git", "archive", "package-lock.json",
     "bun.lockb", ".env", "apex-conductor-main", ".gemini",
-    "temp-mp-deploy", "releases", "logs",
+    "temp-mp-deploy", "logs",
 }
 
 # Arquivos-chave que DEVEM ter tag "core"

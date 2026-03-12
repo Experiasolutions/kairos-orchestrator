@@ -15,7 +15,7 @@ from config import (
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
 )
-from telegram.bot import create_bot
+from tg_bot.bot import create_bot
 from workers.morning_brief import generate_morning_brief
 from workers.task_worker import process_pending_tasks
 from workers.context_sync import get_system_status

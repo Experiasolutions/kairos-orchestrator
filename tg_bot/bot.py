@@ -1,4 +1,5 @@
-# Telegram Bot — handlers para comandos do Gabriel
+# Telegram Bot — KAIROS SKY (Natural Language Interface)
+# O Gabriel conversa naturalmente e o SKY entende a intenção.
 import logging
 import json
 from telegram import Update
@@ -18,6 +19,58 @@ import supabase_client as db
 
 logger = logging.getLogger("kairos.telegram")
 
+# ─── System Prompt (A Persona do SKY no Telegram) ────────────
+SYSTEM_PROMPT = """Você é o KAIROS SKY, assistente pessoal autônomo do Gabriel Ferreira.
+Você roda 24/7 na nuvem (Railway) e é a ponte entre o Gabriel, seu PC local e o sistema KAIROS.
+
+Regras de Comportamento:
+- Responda em português, de forma direta e objetiva (como um JARVIS pessoal)
+- Use emojis com moderação para dar vida
+- Seja proativo: se o Gabriel perguntar algo vago, sugira ações concretas
+- Você tem acesso a: status do sistema, missões, bosses financeiros, leads, tasks e knowledge brain
+- Nunca invente dados — se não sabe, diga que vai verificar
+- Mantenha respostas concisas (máx 2000 chars) a menos que peçam detalhes
+- Chame o Gabriel de "Dragonborn" ocasionalmente (é o apelido RPG dele)
+
+Capacidades que você pode executar quando solicitado:
+- Gerar o Morning Brief (relatório matinal)
+- Mostrar status do sistema (XP, nível, season, leads, dívidas)
+- Listar e gerenciar missões/quests do dia
+- Mostrar bosses financeiros (dívidas gamificadas)
+- Adicionar tasks à fila de processamento
+- Processar tasks pendentes via IA
+- Fazer night check-in (relatório noturno)
+- Responder perguntas gerais usando Knowledge Brain + LLM"""
+
+# ─── Intent Classifier (Rápido, sem LLM) ─────────────────────
+
+INTENT_KEYWORDS = {
+    "brief": ["brief", "briefing", "matinal", "morning", "relatório", "relatorio", "resumo do dia", "como estão as coisas"],
+    "status": ["status", "como estou", "como estamos", "nivel", "nível", "xp", "season", "sistema", "como está o sistema", "como ta"],
+    "quests": ["quest", "missão", "missões", "missoes", "tarefas de hoje", "o que tenho", "o que fazer", "afazeres"],
+    "bosses": ["boss", "bosses", "dívida", "divida", "dívidas", "dividas", "financeiro", "quanto devo", "finanças"],
+    "add_task": ["adiciona task", "adicionar task", "nova task", "cria task", "adiciona tarefa", "nova tarefa", "anota", "anota aí", "lembra de"],
+    "process": ["processa", "processar", "executa task", "executar", "roda as tasks", "processa as tasks"],
+    "checkin": ["check-in", "checkin", "check in", "noturno", "encerrar o dia", "finalizar dia", "como foi o dia"],
+    "leads": ["lead", "leads", "clientes", "prospectos", "pipeline"],
+}
+
+
+def _classify_intent(text: str) -> str:
+    """Classifica a intenção do Gabriel via keywords simples (zero latência)."""
+    text_lower = text.lower().strip()
+
+    # Checagem rápida de keywords
+    for intent, keywords in INTENT_KEYWORDS.items():
+        for kw in keywords:
+            if kw in text_lower:
+                return intent
+
+    # Se não bater nenhum keyword, é conversa livre (vai pro LLM)
+    return "conversation"
+
+
+# ─── Auth ─────────────────────────────────────────────────────
 
 def _is_authorized(update: Update) -> bool:
     """Verifica se o usuário é o Gabriel."""
@@ -28,62 +81,32 @@ def _is_authorized(update: Update) -> bool:
     return True
 
 
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Comando /start — boas-vindas."""
-    if not _is_authorized(update):
-        return
-    chat_id = update.effective_chat.id if update.effective_chat else "unknown"
-    msg = (
-        "🐉 KAIROS SKY — Online\n\n"
-        f"Chat ID: `{chat_id}`\n\n"
-        "Comandos:\n"
-        "/brief — Morning Brief\n"
-        "/status — Status do sistema\n"
-        "/quests — Missões de hoje\n"
-        "/bosses — Bosses financeiros\n"
-        "/check — Night Check-in\n"
-        "/task [descrição] — Adicionar task\n"
-        "/process — Processar tasks pendentes\n"
-        "/sync — Sincronizar com Opus\n"
-        "/ask [pergunta] — Perguntar à IA\n"
-    )
-    if update.message:
-        await update.message.reply_text(msg, parse_mode="Markdown")
+# ─── Action Executors ─────────────────────────────────────────
 
-
-async def cmd_brief(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _exec_brief(update: Update) -> None:
     """Gera e envia o Morning Brief."""
-    if not _is_authorized(update):
+    if not update.message:
         return
-    if update.message:
-        await update.message.reply_text("⏳ Gerando briefing...")
-        brief = generate_morning_brief()
-        # Telegram tem limite de 4096 chars
-        if len(brief) > 4000:
-            for i in range(0, len(brief), 4000):
-                await update.message.reply_text(brief[i:i+4000])
-        else:
-            await update.message.reply_text(brief)
+    await update.message.reply_text("⏳ Preparando seu briefing, Dragonborn...")
+    brief = generate_morning_brief()
+    await _send_long(update, brief)
 
 
-async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Retorna status do sistema."""
-    if not _is_authorized(update):
+async def _exec_status(update: Update) -> None:
+    """Mostra status do sistema."""
+    if not update.message:
         return
-    if update.message:
-        status = get_system_status()
-        await update.message.reply_text(status)
+    status = get_system_status()
+    await update.message.reply_text(status)
 
 
-async def cmd_quests(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _exec_quests(update: Update) -> None:
     """Lista missões de hoje."""
-    if not _is_authorized(update):
-        return
     if not update.message:
         return
     quests = db.get_today_quests()
     if not quests:
-        await update.message.reply_text("📋 Nenhuma missão definida para hoje.\nUse /task para adicionar.")
+        await update.message.reply_text("📋 Nenhuma missão definida para hoje.\nMe diga o que quer fazer e eu crio uma!")
         return
 
     layers = {"genius": "🔵", "excellence": "🟢", "impact": "🟡", "vortex": "🔴"}
@@ -98,16 +121,13 @@ async def cmd_quests(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text("\n".join(lines))
 
 
-async def cmd_bosses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _exec_bosses(update: Update) -> None:
     """Lista bosses financeiros."""
-    if not _is_authorized(update):
-        return
     if not update.message:
         return
-
     bosses = db.get_bosses()
     if not bosses:
-        await update.message.reply_text("🎉 Todos os bosses derrotados!")
+        await update.message.reply_text("🎉 Todos os bosses derrotados! Zerou o jogo!")
         return
 
     priority_icons = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "⚪"}
@@ -128,31 +148,32 @@ async def cmd_bosses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text("\n".join(lines))
 
 
-async def cmd_task(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Adiciona task à fila."""
-    if not _is_authorized(update):
-        return
-    if not update.message or not context.args:
-        if update.message:
-            await update.message.reply_text("Uso: /task [descrição da task]")
-        return
-
-    title = " ".join(context.args)
-    task = db.add_task(title, created_by="gabriel")
-    await update.message.reply_text(f"✅ Task adicionada: {title}")
-
-
-async def cmd_process(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Processa tasks pendentes."""
-    if not _is_authorized(update):
-        return
+async def _exec_add_task(update: Update, text: str) -> None:
+    """Adiciona task à fila extraindo a descrição do texto natural."""
     if not update.message:
         return
+    # Remove keywords de ativação para pegar só a descrição
+    clean = text
+    for kw in ["adiciona task", "adicionar task", "nova task", "cria task",
+                "adiciona tarefa", "nova tarefa", "anota aí", "anota", "lembra de"]:
+        clean = clean.lower().replace(kw, "").strip()
 
+    if not clean or len(clean) < 3:
+        await update.message.reply_text("🤔 O que você quer que eu anote como task?")
+        return
+
+    db.add_task(clean, created_by="gabriel")
+    await update.message.reply_text(f"✅ Anotado: *{clean}*\nVou processar quando chegar a hora.", parse_mode="Markdown")
+
+
+async def _exec_process(update: Update) -> None:
+    """Processa tasks pendentes."""
+    if not update.message:
+        return
     await update.message.reply_text("⏳ Processando tasks pendentes...")
     results = process_pending_tasks()
     if not results:
-        await update.message.reply_text("📋 Nenhuma task pendente.")
+        await update.message.reply_text("📋 Fila limpa, nenhuma task pendente.")
         return
 
     completed = sum(1 for r in results if r.get("status") == "completed")
@@ -160,75 +181,52 @@ async def cmd_process(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_text(f"✅ {completed} concluídas | ❌ {failed} falharam")
 
 
-async def cmd_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Inicia night check-in."""
-    if not _is_authorized(update):
-        return
+async def _exec_checkin(update: Update) -> None:
+    """Inicia night check-in conversacional."""
     if not update.message:
         return
-
     msg = (
-        "🌙 NIGHT CHECK-IN\n\n"
-        "Responda com um JSON ou texto:\n"
-        "1. Missões concluídas (lista)\n"
-        "2. O que bloqueou (1 palavra)\n"
-        "3. Energia amanhã (1-5)\n"
-        "4. 1 coisa boa do dia\n"
-        "5. Missão 🔵 concluída? (sim/não)\n"
-        "6. Minutos na zona 🔵\n\n"
-        "Exemplo:\n"
-        '{"blocker":"cansaço","energy":3,"good":"terminei o OS","genius":true,"genius_min":45}'
+        "🌙 Bora fechar o dia, Dragonborn.\n\n"
+        "Me conta:\n"
+        "1. O que bloqueou hoje?\n"
+        "2. Energia pra amanhã (1-5)?\n"
+        "3. Uma coisa boa do dia?\n"
+        "4. Fez algo na zona 🔵 (gênio)? Quanto tempo?\n\n"
+        "Pode mandar em texto livre que eu entendo."
     )
     await update.message.reply_text(msg)
 
 
-async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Pergunta direta à IA."""
-    if not _is_authorized(update):
+async def _exec_leads(update: Update) -> None:
+    """Lista leads ativos."""
+    if not update.message:
         return
-    if not update.message or not context.args:
-        if update.message:
-            await update.message.reply_text("Uso: /ask [sua pergunta]")
+    leads = db.get_leads()
+    if not leads:
+        await update.message.reply_text("📭 Nenhum lead no pipeline ainda.")
         return
 
-    question = " ".join(context.args)
-    await update.message.reply_text("🤔 Pensando...")
-    answer = call_model(question, category="general", title=question)
-    if len(answer) > 4000:
-        for i in range(0, len(answer), 4000):
-            await update.message.reply_text(answer[i:i+4000])
-    else:
-        await update.message.reply_text(answer)
+    lines = [f"📊 LEADS ATIVOS ({len(leads)})\n"]
+    for lead in leads[:10]:
+        status_icon = {"new": "🆕", "contacted": "📞", "qualified": "✅", "lost": "❌"}.get(
+            lead.get("status", "new"), "⚪"
+        )
+        lines.append(f"{status_icon} {lead.get('name', 'Sem nome')} — {lead.get('source', '?')}")
+
+    if len(leads) > 10:
+        lines.append(f"\n... e mais {len(leads) - 10} leads")
+    await update.message.reply_text("\n".join(lines))
 
 
-async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Sincroniza dados do Opus."""
-    if not _is_authorized(update):
-        return
+async def _exec_conversation(update: Update, text: str) -> None:
+    """Conversa livre — envia pro LLM com contexto do Knowledge Brain."""
     if not update.message:
         return
 
-    await update.message.reply_text(
-        "📡 Cole o JSON de sincronização do Opus:\n"
-        '{"decisions":[], "directives":[], "context_updates":{}, "next_tasks":[]}'
-    )
-
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler para mensagens de texto (night check-in / sync)."""
-    if not _is_authorized(update):
-        return
-    if not update.message or not update.message.text:
-        return
-
-    text = update.message.text.strip()
-
-    # Tentar parsing como JSON (check-in ou sync)
-    if text.startswith("{"):
+    # Tentar parsing como JSON (check-in ou sync legado)
+    if text.strip().startswith("{"):
         try:
             data = json.loads(text)
-
-            # Check-in noturno
             if "energy" in data or "genius" in data:
                 result = process_night_checkin(
                     completed_quests=[],
@@ -241,44 +239,103 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 await update.message.reply_text(result)
                 return
-
-            # Sync do Opus
             if "decisions" in data or "directives" in data:
                 result = sync_from_opus(data)
                 await update.message.reply_text(result)
                 return
-
         except json.JSONDecodeError:
             pass
 
-    # Mensagem genérica — responder via IA
-    answer = call_model(text, category="general", title=text)
-    if len(answer) > 4000:
-        for i in range(0, len(answer), 4000):
-            await update.message.reply_text(answer[i:i+4000])
-    else:
-        await update.message.reply_text(answer)
+    # Conversa livre com LLM
+    enriched = f"{SYSTEM_PROMPT}\n\nGabriel disse: {text}"
+    answer = call_model(enriched, category="general", title=text)
+    await _send_long(update, answer)
 
+
+# ─── Utilities ────────────────────────────────────────────────
+
+async def _send_long(update: Update, text: str) -> None:
+    """Envia mensagem longa quebrando em chunks de 4000 chars."""
+    if not update.message:
+        return
+    if len(text) > 4000:
+        for i in range(0, len(text), 4000):
+            await update.message.reply_text(text[i:i+4000])
+    else:
+        await update.message.reply_text(text)
+
+
+# ─── Main Handler (O Cérebro de Roteamento) ──────────────────
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Único /command mantido — bootstrap inicial."""
+    if not _is_authorized(update):
+        return
+    if not update.message:
+        return
+
+    chat_id = update.effective_chat.id if update.effective_chat else "unknown"
+    msg = (
+        "🐉 KAIROS SKY — Online\n\n"
+        f"Chat ID: `{chat_id}`\n\n"
+        "Eu entendo linguagem natural. Exemplos:\n"
+        '• "Me dá o briefing do dia"\n'
+        '• "Como estão minhas finanças?"\n'
+        '• "Quais tarefas tenho pra hoje?"\n'
+        '• "Anota aí: ligar pro hortifruti amanhã"\n'
+        '• "Status do sistema"\n'
+        '• "Quantos leads eu tenho?"\n\n'
+        "Pode falar comigo como se fosse um chat normal. 🎯"
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handler principal: classifica intenção e executa a ação."""
+    if not _is_authorized(update):
+        return
+    if not update.message or not update.message.text:
+        return
+
+    text = update.message.text.strip()
+    intent = _classify_intent(text)
+
+    logger.info("Mensagem: '%s' → Intent: %s", text[:50], intent)
+
+    if intent == "brief":
+        await _exec_brief(update)
+    elif intent == "status":
+        await _exec_status(update)
+    elif intent == "quests":
+        await _exec_quests(update)
+    elif intent == "bosses":
+        await _exec_bosses(update)
+    elif intent == "add_task":
+        await _exec_add_task(update, text)
+    elif intent == "process":
+        await _exec_process(update)
+    elif intent == "checkin":
+        await _exec_checkin(update)
+    elif intent == "leads":
+        await _exec_leads(update)
+    else:
+        await _exec_conversation(update, text)
+
+
+# ─── Bot Factory ──────────────────────────────────────────────
 
 def create_bot() -> Application:
-    """Cria e configura o bot Telegram."""
+    """Cria e configura o bot Telegram (Natural Language)."""
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN é obrigatória")
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Registrar handlers
+    # /start é o único command (bootstrap)
     app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("brief", cmd_brief))
-    app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CommandHandler("quests", cmd_quests))
-    app.add_handler(CommandHandler("bosses", cmd_bosses))
-    app.add_handler(CommandHandler("task", cmd_task))
-    app.add_handler(CommandHandler("process", cmd_process))
-    app.add_handler(CommandHandler("check", cmd_check))
-    app.add_handler(CommandHandler("ask", cmd_ask))
-    app.add_handler(CommandHandler("sync", cmd_sync))
+
+    # Todo o resto é linguagem natural
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("Bot Telegram configurado com %d handlers", 11)
+    logger.info("Bot Telegram configurado em modo Natural Language (2 handlers)")
     return app

@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import datetime
 from config import GROQ_API_KEY, GOOGLE_API_KEYS
-from supabase_client import get_supabase
+from supabase_client import get_client
 
 logger = logging.getLogger("kairos.heartbeat")
 
@@ -19,7 +19,7 @@ async def cognitive_heartbeat(bot_app, interval_seconds: int = 60):
     - Act: Loga as ações ou engatilha automações.
     """
     logger.info("🧠 Cognitive Heartbeat inicializado com OODA loop (intervalo: %ds)", interval_seconds)
-    supabase = get_supabase()
+    supabase = get_client()
 
     while True:
         try:

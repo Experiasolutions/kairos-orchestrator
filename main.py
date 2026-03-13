@@ -19,6 +19,7 @@ from tg_bot.bot import create_bot
 from workers.morning_brief import generate_morning_brief
 from workers.task_worker import process_pending_tasks
 from workers.context_sync import get_system_status
+from workers.cognitive_loop import cognitive_heartbeat
 
 # ─── Logging ─────────────────────────────────────────────────
 logging.basicConfig(
@@ -152,10 +153,9 @@ async def main() -> None:
 
     logger.info("✅ KAIROS SKY — Operacional")
 
-    # Manter rodando
+    # Manter rodando via Cognitive Heartbeat (OODA Loop) ativo
     try:
-        while True:
-            await asyncio.sleep(1)
+        await cognitive_heartbeat(bot_app, interval_seconds=60)
     except (KeyboardInterrupt, SystemExit):
         logger.info("Encerrando KAIROS SKY...")
         scheduler.shutdown()

@@ -2,6 +2,8 @@
 # O Gabriel conversa naturalmente e o SKY entende a intenção.
 import logging
 import json
+import io
+from groq import Groq
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -10,7 +12,8 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, GROQ_API_KEY
+from persona import SYSTEM_PROMPT
 from workers.morning_brief import generate_morning_brief
 from workers.night_processor import process_night_checkin
 from workers.context_sync import sync_from_opus, get_system_status
@@ -18,29 +21,6 @@ from workers.task_worker import process_pending_tasks, call_model
 import supabase_client as db
 
 logger = logging.getLogger("kairos.telegram")
-
-# ─── System Prompt (A Persona do SKY no Telegram) ────────────
-SYSTEM_PROMPT = """Você é o KAIROS SKY, assistente pessoal autônomo do Gabriel Ferreira.
-Você roda 24/7 na nuvem (Railway) e é a ponte entre o Gabriel, seu PC local e o sistema KAIROS.
-
-Regras de Comportamento:
-- Responda em português, de forma direta e objetiva (como um JARVIS pessoal)
-- Use emojis com moderação para dar vida
-- Seja proativo: se o Gabriel perguntar algo vago, sugira ações concretas
-- Você tem acesso a: status do sistema, missões, bosses financeiros, leads, tasks e knowledge brain
-- Nunca invente dados — se não sabe, diga que vai verificar
-- Mantenha respostas concisas (máx 2000 chars) a menos que peçam detalhes
-- Chame o Gabriel de "Dragonborn" ocasionalmente (é o apelido RPG dele)
-
-Capacidades que você pode executar quando solicitado:
-- Gerar o Morning Brief (relatório matinal)
-- Mostrar status do sistema (XP, nível, season, leads, dívidas)
-- Listar e gerenciar missões/quests do dia
-- Mostrar bosses financeiros (dívidas gamificadas)
-- Adicionar tasks à fila de processamento
-- Processar tasks pendentes via IA
-- Fazer night check-in (relatório noturno)
-- Responder perguntas gerais usando Knowledge Brain + LLM"""
 
 # ─── Intent Classifier (Rápido, sem LLM) ─────────────────────
 
@@ -265,6 +245,23 @@ async def _send_long(update: Update, text: str) -> None:
         await update.message.reply_text(text)
 
 
+async def _transcribe_voice(file_bytes: bytes) -> str:
+    """Transcreve áudio via Groq Whisper (distil-whisper-large-v3-en)."""
+    if not GROQ_API_KEY:
+        return "[Transcrição indisponível — key Groq não configurada]"
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        transcription = client.audio.transcriptions.create(
+            file=("voice.ogg", file_bytes),
+            model="whisper-large-v3-turbo",
+            language="pt",
+        )
+        return transcription.text
+    except Exception as e:
+        logger.error("Erro na transcrição: %s", e)
+        return f"[Erro na transcrição: {e}]"
+
+
 # ─── Main Handler (O Cérebro de Roteamento) ──────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -290,16 +287,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler principal: classifica intenção e executa a ação."""
-    if not _is_authorized(update):
-        return
-    if not update.message or not update.message.text:
-        return
-
-    text = update.message.text.strip()
+async def _route_intent(update: Update, text: str) -> None:
+    """Roteia texto classificado para a ação correta."""
     intent = _classify_intent(text)
-
     logger.info("Mensagem: '%s' → Intent: %s", text[:50], intent)
 
     if intent == "brief":
@@ -322,10 +312,52 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _exec_conversation(update, text)
 
 
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handler para mensagens de texto."""
+    if not _is_authorized(update):
+        return
+    if not update.message or not update.message.text:
+        return
+    await _route_intent(update, update.message.text.strip())
+
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handler para mensagens de voz — transcreve via Groq Whisper e processa."""
+    if not _is_authorized(update):
+        return
+    if not update.message:
+        return
+
+    voice = update.message.voice or update.message.audio
+    if not voice:
+        return
+
+    logger.info("Áudio recebido (%d bytes, %ss)", voice.file_size or 0, voice.duration or 0)
+    await update.message.reply_text("🎧 Transcrevendo seu áudio...")
+
+    try:
+        tg_file = await voice.get_file()
+        file_bytes = await tg_file.download_as_bytearray()
+        transcript = await _transcribe_voice(bytes(file_bytes))
+
+        if transcript.startswith("["):
+            # Erro na transcrição
+            await update.message.reply_text(transcript)
+            return
+
+        # Mostrar transcrição e processar
+        await update.message.reply_text(f"📝 *Transcrição:* {transcript}", parse_mode="Markdown")
+        await _route_intent(update, transcript)
+
+    except Exception as e:
+        logger.error("Erro ao processar áudio: %s", e)
+        await update.message.reply_text(f"❌ Erro ao processar áudio: {e}")
+
+
 # ─── Bot Factory ──────────────────────────────────────────────
 
 def create_bot() -> Application:
-    """Cria e configura o bot Telegram (Natural Language)."""
+    """Cria e configura o bot Telegram (Natural Language + Voice)."""
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN é obrigatória")
 
@@ -334,8 +366,11 @@ def create_bot() -> Application:
     # /start é o único command (bootstrap)
     app.add_handler(CommandHandler("start", cmd_start))
 
-    # Todo o resto é linguagem natural
+    # Texto: linguagem natural
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("Bot Telegram configurado em modo Natural Language (2 handlers)")
+    # Áudio: transcrição via Groq Whisper + processamento
+    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
+
+    logger.info("Bot Telegram configurado: Natural Language + Voice (3 handlers)")
     return app

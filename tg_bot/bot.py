@@ -18,6 +18,7 @@ from workers.morning_brief import generate_morning_brief
 from workers.night_processor import process_night_checkin
 from workers.context_sync import sync_from_opus, get_system_status
 from workers.task_worker import process_pending_tasks, call_model
+from workers.os_worker import get_os_status, check_zone_violation
 import supabase_client as db
 
 logger = logging.getLogger("kairos.telegram")
@@ -33,6 +34,7 @@ INTENT_KEYWORDS = {
     "process": ["processa", "processar", "executa task", "executar", "roda as tasks", "processa as tasks"],
     "checkin": ["check-in", "checkin", "check in", "noturno", "encerrar o dia", "finalizar dia", "como foi o dia"],
     "leads": ["lead", "leads", "clientes", "prospectos", "pipeline"],
+    "bloco": ["bloco", "zona", "qual bloco", "que zona", "que horas", "raid", "aurora", "santuário", "santuario", "vórtex", "vortex", "agenda", "cronograma"],
 }
 
 
@@ -128,6 +130,14 @@ async def _exec_bosses(update: Update) -> None:
     await update.message.reply_text("\n".join(lines))
 
 
+async def _exec_bloco(update: Update) -> None:
+    """Mostra o bloco de tempo atual da OS."""
+    if not update.message:
+        return
+    status = get_os_status()
+    await update.message.reply_text(status)
+
+
 async def _exec_add_task(update: Update, text: str) -> None:
     """Adiciona task à fila extraindo a descrição do texto natural."""
     if not update.message:
@@ -141,6 +151,11 @@ async def _exec_add_task(update: Update, text: str) -> None:
     if not clean or len(clean) < 3:
         await update.message.reply_text("🤔 O que você quer que eu anote como task?")
         return
+
+    # Verificar se a task viola a zona atual
+    violation = check_zone_violation(clean)
+    if violation:
+        await update.message.reply_text(violation)
 
     db.add_task(clean, created_by="gabriel")
     await update.message.reply_text(f"✅ Anotado: *{clean}*\nVou processar quando chegar a hora.", parse_mode="Markdown")
@@ -308,6 +323,8 @@ async def _route_intent(update: Update, text: str) -> None:
         await _exec_checkin(update)
     elif intent == "leads":
         await _exec_leads(update)
+    elif intent == "bloco":
+        await _exec_bloco(update)
     else:
         await _exec_conversation(update, text)
 

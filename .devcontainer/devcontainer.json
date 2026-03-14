@@ -1,0 +1,35 @@
+{
+    "name": "KAIROS SKY Worker",
+    "image": "mcr.microsoft.com/devcontainers/python:3.12",
+    "features": {
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "20"
+        }
+    },
+    "postCreateCommand": "pip install -r requirements.txt && echo '🐉 KAIROS Worker ready'",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python3"
+            }
+        },
+        "codespaces": {
+            "openFiles": [
+                "README.md"
+            ]
+        }
+    },
+    "containerEnv": {
+        "ENVIRONMENT": "codespace-worker",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1"
+    },
+    "forwardPorts": [],
+    "remoteEnv": {
+        "SUPABASE_URL": "${localEnv:SUPABASE_URL}",
+        "SUPABASE_SERVICE_ROLE_KEY": "${localEnv:SUPABASE_SERVICE_ROLE_KEY}",
+        "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
+        "GOOGLE_API_KEYS": "${localEnv:GOOGLE_API_KEYS}",
+        "GROQ_API_KEY": "${localEnv:GROQ_API_KEY}"
+    }
+}

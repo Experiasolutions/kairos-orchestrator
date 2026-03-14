@@ -78,11 +78,18 @@ async def _exec_brief(update: Update) -> None:
 
 
 async def _exec_status(update: Update) -> None:
-    """Mostra status do sistema."""
+    """Mostra status do sistema + saúde do KAIROS."""
     if not update.message:
         return
     status = get_system_status()
-    await update.message.reply_text(status)
+    # Adicionar health report do system auditor
+    try:
+        from workers.system_auditor import format_health_report
+        health = format_health_report()
+        status += "\n\n" + health
+    except Exception:
+        pass
+    await _send_long(update, status)
 
 
 async def _exec_quests(update: Update) -> None:
@@ -306,8 +313,24 @@ async def _exec_conversation(update: Update, text: str) -> None:
         except json.JSONDecodeError:
             pass
 
-    # Conversa livre com LLM
-    enriched = f"{SYSTEM_PROMPT}\n\nGabriel disse: {text}"
+    # Conversa livre com LLM — enriquecida com Knowledge Brain + memórias
+    brain_context = ""
+    try:
+        from supabase_client import get_brain_context, get_recent_memories
+        # Buscar conhecimento relevante ao que Gabriel disse
+        brain_context = get_brain_context(text, max_chunks=3)
+        # Adicionar últimas memórias do dia como contexto
+        recent = get_recent_memories(limit=3)
+        if recent:
+            mem_lines = ["\n--- MEMÓRIAS RECENTES DO GABRIEL ---"]
+            for m in recent:
+                mem_lines.append(f"[{m.get('category', '?')}] {m.get('content_chunk', '')}")
+            mem_lines.append("--- FIM MEMÓRIAS ---\n")
+            brain_context += "\n".join(mem_lines)
+    except Exception:
+        pass  # Se falhar, continua sem contexto extra
+
+    enriched = f"{SYSTEM_PROMPT}\n\n{brain_context}\n\nGabriel disse: {text}"
     answer = call_model(enriched, category="general", title=text)
     await _send_long(update, answer)
 

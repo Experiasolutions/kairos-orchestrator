@@ -242,3 +242,57 @@ def get_brain_context(query: str, max_chunks: int = 3) -> str:
 
     context_parts.append("--- END CONTEXT ---\n")
     return "\n".join(context_parts)
+
+
+# ─── Telegram Memory Bridge ───────────────────────────────
+
+def save_memory(content: str, category: str = "telegram_note", tags: list[str] | None = None, source: str = "telegram") -> dict:
+    """
+    Salva uma memória do Telegram no Knowledge Brain.
+    Isso cria a ponte: Telegram → Supabase → Antigravity.
+    """
+    import hashlib
+    content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+    timestamp = datetime.now().isoformat()
+    file_path = f"{source}://memory/{category}/{content_hash}"
+
+    # Gerar resumo automático (primeiros 100 chars)
+    summary = content[:100] + ("..." if len(content) > 100 else "")
+
+    entry = {
+        "file_path": file_path,
+        "file_name": f"memory-{content_hash[:8]}",
+        "category": category,
+        "summary": summary,
+        "content_hash": content_hash,
+        "file_size": len(content.encode()),
+        "chunk_index": 0,
+        "total_chunks": 1,
+        "content_chunk": content,
+        "tags": tags or [source, category, date.today().isoformat()],
+    }
+
+    try:
+        resp = get_client().table("knowledge_brain").insert(entry).execute()
+        if resp.data:
+            logger.info("Memória salva: %s [%s]", summary[:50], category)
+            return resp.data[0]
+    except Exception as e:
+        logger.error("Erro ao salvar memória: %s", e)
+    return {}
+
+
+def get_recent_memories(category: str | None = None, limit: int = 20) -> list[dict]:
+    """Retorna memórias recentes do Knowledge Brain (ponte Telegram→Antigravity)."""
+    query = get_client().table("knowledge_brain").select(
+        "id,file_path,category,summary,content_chunk,tags,created_at"
+    ).order("created_at", desc=True).limit(limit)
+
+    if category:
+        query = query.eq("category", category)
+
+    # Filtrar apenas memórias do Telegram (não arquivos indexados do filesystem)
+    query = query.like("file_path", "telegram://%")
+
+    return query.execute().data or []
+

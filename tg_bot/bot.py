@@ -20,6 +20,7 @@ from workers.context_sync import sync_from_opus, get_system_status
 from workers.task_worker import process_pending_tasks, call_model
 from workers.os_worker import get_os_status, check_zone_violation
 import supabase_client as db
+from supabase_client import save_memory, get_recent_memories
 
 logger = logging.getLogger("kairos.telegram")
 
@@ -35,6 +36,8 @@ INTENT_KEYWORDS = {
     "checkin": ["check-in", "checkin", "check in", "noturno", "encerrar o dia", "finalizar dia", "como foi o dia"],
     "leads": ["lead", "leads", "clientes", "prospectos", "pipeline"],
     "bloco": ["bloco", "zona", "qual bloco", "que zona", "que horas", "raid", "aurora", "santuário", "santuario", "vórtex", "vortex", "agenda", "cronograma"],
+    "lembrar": ["lembra disso", "guarda isso", "salva isso", "anota isso", "lembra que", "guarda que", "salva que", "não esquece", "memoriza", "registra isso", "registra que"],
+    "memoria": ["o que você lembra", "minhas notas", "memórias", "o que eu disse", "o que guardei", "recorda", "histórico"],
 }
 
 
@@ -128,6 +131,68 @@ async def _exec_bosses(update: Update) -> None:
 
     lines.append(f"\n💀 Total: R${total:,.0f}")
     await update.message.reply_text("\n".join(lines))
+
+
+async def _exec_lembrar(update: Update, text: str) -> None:
+    """Salva uma memória no Knowledge Brain (ponte Telegram→Antigravity)."""
+    if not update.message:
+        return
+    # Remover keywords de ativação
+    clean = text
+    for kw in ["lembra disso", "guarda isso", "salva isso", "anota isso",
+               "lembra que", "guarda que", "salva que", "não esquece",
+               "memoriza", "registra isso", "registra que"]:
+        clean = clean.lower().replace(kw, "").strip()
+
+    if not clean or len(clean) < 3:
+        await update.message.reply_text("🤔 O que você quer que eu lembre?")
+        return
+
+    # Detectar categoria por keywords simples
+    category = "telegram_note"
+    cat_keywords = {
+        "decisao": ["decidi", "decisão", "escolhi", "optei"],
+        "ideia": ["ideia", "insight", "pensei", "tive uma"],
+        "financeiro": ["paguei", "recebi", "divida", "dívida", "boleto", "dinheiro", "reais", "r$"],
+        "cliente": ["cliente", "elaine", "hortifruti", "master pumps", "lead", "proposta"],
+        "pessoal": ["letícia", "saúde", "treino", "maconha", "sentimento"],
+    }
+    clean_lower = clean.lower()
+    for cat, kws in cat_keywords.items():
+        for kw in kws:
+            if kw in clean_lower:
+                category = cat
+                break
+
+    tags = ["telegram", category, "dragonborn"]
+    result = save_memory(clean, category=category, tags=tags)
+    if result:
+        await update.message.reply_text(
+            f"🧠 Memorizado [{category}]: *{clean[:80]}*\n"
+            f"✅ Guardado no Knowledge Brain. O Antigravity vai saber disso.",
+            parse_mode="Markdown",
+        )
+    else:
+        await update.message.reply_text("❌ Erro ao salvar memória. Tenta de novo.")
+
+
+async def _exec_memoria(update: Update) -> None:
+    """Mostra memórias recentes do Knowledge Brain."""
+    if not update.message:
+        return
+    memories = get_recent_memories(limit=10)
+    if not memories:
+        await update.message.reply_text("🧠 Nenhuma memória salva ainda. Use 'lembra que...' para guardar algo.")
+        return
+
+    lines = ["🧠 *MEMÓRIAS RECENTES:*\n"]
+    for m in memories:
+        created = m.get("created_at", "")[:10]
+        category = m.get("category", "?")
+        summary = m.get("summary", "")[:80]
+        lines.append(f"📌 [{category}] {summary} _({created})_")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
 async def _exec_bloco(update: Update) -> None:
@@ -325,6 +390,10 @@ async def _route_intent(update: Update, text: str) -> None:
         await _exec_leads(update)
     elif intent == "bloco":
         await _exec_bloco(update)
+    elif intent == "lembrar":
+        await _exec_lembrar(update, text)
+    elif intent == "memoria":
+        await _exec_memoria(update)
     else:
         await _exec_conversation(update, text)
 

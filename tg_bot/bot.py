@@ -364,7 +364,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         # Mostrar transcrição e processar
         await update.message.reply_text(f"📝 *Transcrição:* {transcript}", parse_mode="Markdown")
-        await _route_intent(update, transcript)
+        # Prefixar com tag para que o LLM saiba que é transcrição e não peça de volta
+        tagged = f"[ÁUDIO TRANSCRITO] {transcript}"
+        await _route_intent(update, tagged)
 
     except Exception as e:
         logger.error("Erro ao processar áudio: %s", e)

@@ -313,7 +313,7 @@ async def _exec_conversation(update: Update, text: str) -> None:
         except json.JSONDecodeError:
             pass
 
-    # Conversa livre com LLM — enriquecida com Knowledge Brain + memórias
+    # Conversa livre com LLM — enriquecida com Knowledge Brain + memórias + estado cognitivo
     brain_context = ""
     try:
         from supabase_client import get_brain_context, get_recent_memories
@@ -329,6 +329,15 @@ async def _exec_conversation(update: Update, text: str) -> None:
             brain_context += "\n".join(mem_lines)
     except Exception:
         pass  # Se falhar, continua sem contexto extra
+
+    # Injetar estado cognitivo (Noesis Layer 1)
+    try:
+        from workers.cognitive_state import get_state_summary
+        cognitive = get_state_summary()
+        if cognitive:
+            brain_context += f"\n\n--- ESTADO COGNITIVO ---\n{cognitive}\n--- FIM ESTADO ---\n"
+    except Exception:
+        pass
 
     enriched = f"{SYSTEM_PROMPT}\n\n{brain_context}\n\nGabriel disse: {text}"
     answer = call_model(enriched, category="general", title=text)

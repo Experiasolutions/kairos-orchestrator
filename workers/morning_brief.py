@@ -1,7 +1,9 @@
-# Morning Brief Worker — gera briefing matinal v2.0 com Pareto
+# Morning Brief Worker — gera briefing matinal v3.0 com Pareto + Noesis
 import logging
 from datetime import date
 import supabase_client as db
+from workers.cognitive_state import get_state_summary
+from workers.learning_model import get_insights_for_brief
 
 logger = logging.getLogger("kairos.morning")
 
@@ -24,6 +26,10 @@ DIA {season_day} · {season} · STREAK: {streak} dias
 {bosses_status}
 
 🎯 PARETO CHECK: "Hoje, o 0.8% é a missão 🔵 acima. Todo o resto é suporte."
+
+{cognitive_state}
+
+{learning_insights}
 
 Boa missão, Dragonborn. 🐉"""
 
@@ -77,6 +83,16 @@ def generate_morning_brief() -> str:
     bosses = db.get_bosses()
     bosses_text = "\n".join(_format_boss(b) for b in bosses[:3]) or "  Nenhum boss ativo"
 
+    # Estado cognitivo e insights do Learning Model
+    try:
+        cognitive = get_state_summary()
+    except Exception:
+        cognitive = "🧠 Estado cognitivo indisponível"
+    try:
+        learning = get_insights_for_brief()
+    except Exception:
+        learning = "🧬 Learning Model indisponível"
+
     # Montar briefing
     brief = MORNING_TEMPLATE.format(
         season_day=profile.get("season_day", 1),
@@ -90,6 +106,8 @@ def generate_morning_brief() -> str:
         excellence_quests=excellence_text,
         impact_quests=impact_text,
         bosses_status=bosses_text,
+        cognitive_state=cognitive,
+        learning_insights=learning,
     )
 
     # Salvar no memory log

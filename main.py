@@ -2,6 +2,7 @@
 # Orquestrador autônomo 24/7
 import asyncio
 import logging
+import os
 import sys
 from datetime import datetime, time
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -20,6 +21,8 @@ from workers.morning_brief import generate_morning_brief
 from workers.task_worker import process_pending_tasks
 from workers.context_sync import get_system_status
 from workers.cognitive_loop import cognitive_heartbeat
+from workers.learning_model import get_model
+from bridges.webhook_receiver import start_webhook_server
 
 # ─── Logging ─────────────────────────────────────────────────
 logging.basicConfig(
@@ -137,6 +140,27 @@ async def main() -> None:
 
     scheduler.start()
     logger.info("Scheduler ativo com %d jobs", len(scheduler.get_jobs()))
+
+    # Inicializar Learning Model (Anamnesis seed na primeira execução)
+    try:
+        model = get_model()
+        logger.info(
+            "🧬 Learning Model v%d carregado (%d padrões, accuracy: %.0f%%)",
+            model.get("model_version", 1),
+            len(model.get("inference_patterns", [])),
+            float(model.get("model_accuracy", {}).get("accuracy_rate", 0)) * 100,
+        )
+    except Exception as e:
+        logger.warning("Learning Model não carregado: %s", e)
+
+    # Iniciar Webhook Receiver (Railway HTTP)
+    try:
+        webhook_token = os.environ.get("WEBHOOK_TOKEN", "")
+        webhook_port = int(os.environ.get("PORT", "8080"))
+        start_webhook_server(port=webhook_port, token=webhook_token)
+        logger.info("📡 Webhook receiver ativo na porta %d", webhook_port)
+    except Exception as e:
+        logger.warning("Webhook receiver não iniciado: %s", e)
 
     # Status inicial
     try:

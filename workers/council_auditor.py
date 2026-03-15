@@ -72,8 +72,17 @@ def convene_council() -> str:
             get_state_summary(),
             "\n--- LEARNING MODEL ---",
             get_insights_for_brief(),
-            "\n--- RECENT MEMORIES ---"
         ]
+        
+        # Arsenal de ferramentas disponíveis
+        try:
+            from workers.tools_registry import get_conclave_context
+            ctx_parts.append("\n--- ARSENAL ---")
+            ctx_parts.append(get_conclave_context())
+        except Exception:
+            pass
+
+        ctx_parts.append("\n--- RECENT MEMORIES ---")
         recent = db.get_recent_memories(limit=10)
         for m in recent:
             ctx_parts.append(f"- {m.get('content_chunk', '')}")

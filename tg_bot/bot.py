@@ -38,6 +38,8 @@ INTENT_KEYWORDS = {
     "bloco": ["bloco", "zona", "qual bloco", "que zona", "que horas", "raid", "aurora", "santuário", "santuario", "vórtex", "vortex", "agenda", "cronograma"],
     "lembrar": ["lembra disso", "guarda isso", "salva isso", "anota isso", "lembra que", "guarda que", "salva que", "não esquece", "memoriza", "registra isso", "registra que"],
     "memoria": ["o que você lembra", "minhas notas", "memórias", "o que eu disse", "o que guardei", "recorda", "histórico"],
+    "arsenal": ["arsenal", "ferramentas", "tools", "apis", "integrações", "integracoes", "o que temos", "capacidades"],
+    "conclave": ["conclave", "council", "conselho", "convocar conselho", "auditar", "auditoria", "convoca o conselho", "hive mind"],
 }
 
 
@@ -285,6 +287,31 @@ async def _exec_leads(update: Update) -> None:
     await update.message.reply_text("\n".join(lines))
 
 
+async def _exec_arsenal(update: Update) -> None:
+    """Mostra o catálogo de ferramentas e APIs disponíveis."""
+    if not update.message:
+        return
+    try:
+        from workers.tools_registry import get_tools_summary
+        summary = get_tools_summary()
+        await update.message.reply_text(summary)
+    except Exception as e:
+        await update.message.reply_text(f"Erro ao carregar arsenal: {e}")
+
+
+async def _exec_conclave(update: Update) -> None:
+    """Convoca o IA Council sob demanda."""
+    if not update.message:
+        return
+    await update.message.reply_text("🏛️ Convocando o Conclave KAIROS... (3 cadeiras deliberando)")
+    try:
+        from workers.council_auditor import convene_council
+        report = convene_council()
+        await _send_long(update, report)
+    except Exception as e:
+        await update.message.reply_text(f"Erro ao convocar Council: {e}")
+
+
 async def _exec_conversation(update: Update, text: str) -> None:
     """Conversa livre — envia pro LLM com contexto do Knowledge Brain."""
     if not update.message:
@@ -426,6 +453,10 @@ async def _route_intent(update: Update, text: str) -> None:
         await _exec_lembrar(update, text)
     elif intent == "memoria":
         await _exec_memoria(update)
+    elif intent == "arsenal":
+        await _exec_arsenal(update)
+    elif intent == "conclave":
+        await _exec_conclave(update)
     else:
         await _exec_conversation(update, text)
 

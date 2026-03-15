@@ -63,6 +63,9 @@ async def job_process_tasks() -> None:
         logger.error("Erro ao processar tasks: %s", e)
 
 
+from workers.council_auditor import convene_council
+
+
 async def job_night_reminder(bot_app) -> None:
     """Lembra Gabriel do night check-in."""
     logger.info("⏰ Job: Night Check-in Reminder")
@@ -78,6 +81,16 @@ async def job_night_reminder(bot_app) -> None:
             )
     except Exception as e:
         logger.error("Erro no night reminder: %s", e)
+
+
+async def job_council_audit() -> None:
+    """Executa a auditoria diária do IA Council."""
+    logger.info("⏰ Job: IA Council Audit")
+    try:
+        convene_council()
+        logger.info("IA Council Audit finalizado.")
+    except Exception as e:
+        logger.error("Erro no IA Council Audit: %s", e)
 
 
 async def job_keepalive() -> None:
@@ -128,6 +141,14 @@ async def main() -> None:
         args=[bot_app],
         id="night_reminder",
         name="Night Reminder",
+    )
+
+    # IA Council Audit — às 22:30 BRT
+    scheduler.add_job(
+        job_council_audit,
+        CronTrigger(hour=22, minute=30),
+        id="council_audit",
+        name="IA Council",
     )
 
     # Keep-alive — a cada 14 minutos

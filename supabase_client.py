@@ -164,6 +164,43 @@ def set_context(key: str, value: dict, updated_by: str = "orchestrator") -> dict
     return resp.data[0] if resp.data else {}
 
 
+# ─── Entity Registry ───────────────────────────────────────
+
+def get_entity_registry() -> dict:
+    """Retorna o registro de entidades para canonicalização (aliases -> nome canônico)."""
+    return get_context("entity_registry") or {}
+
+
+def register_entity_alias(canonical_name: str, aliases: list[str]) -> dict:
+    """Registra aliases para um nome canônico no Entity Registry."""
+    registry = get_entity_registry()
+    if canonical_name not in registry:
+        registry[canonical_name] = []
+    
+    for alias in aliases:
+        if alias not in registry[canonical_name]:
+            registry[canonical_name].append(alias)
+            
+    return set_context("entity_registry", registry)
+
+
+def normalize_entity(name: str) -> str:
+    """
+    Normaliza um nome usando os aliases registrados.
+    Ex: 'elaine' -> 'Elaine Hortifruti'
+    """
+    registry = get_entity_registry()
+    name_lower = name.lower().strip()
+    
+    for canonical, aliases in registry.items():
+        if name_lower == canonical.lower():
+            return canonical
+        for alias in aliases:
+            if name_lower == alias.lower():
+                return canonical
+    return name
+
+
 # ─── Memory Log ────────────────────────────────────────────
 
 def log_memory(log_type: str, content: str, metadata: dict | None = None, mood: int | None = None, energy: int | None = None, pareto: dict | None = None) -> dict:

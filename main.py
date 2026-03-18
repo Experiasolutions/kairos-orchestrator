@@ -174,6 +174,37 @@ async def main() -> None:
     except Exception as e:
         logger.warning("Learning Model não carregado: %s", e)
 
+    # Inicializar Composio Bridge
+    try:
+        from bridges.composio_bridge import get_status
+        composio_status = get_status()
+        if composio_status.get("available"):
+            logger.info("🔌 Composio SDK ativo (%d apps prioritários)", composio_status.get("priority_apps_count", 0))
+        else:
+            logger.info("🔌 Composio SDK disponível (aguardando COMPOSIO_API_KEY)")
+    except Exception as e:
+        logger.warning("Composio Bridge não carregado: %s", e)
+
+    # Verificar Squad Runner
+    try:
+        from workers.squad_runner import list_squads, _get_engine
+        squads = list_squads()
+        engine = _get_engine()
+        logger.info("🐉 Squad Runner: %d squads, engine: %s", len(squads), engine)
+    except Exception as e:
+        logger.warning("Squad Runner não carregado: %s", e)
+
+    # Verificar Railway Bridge (Criador de Tentáculos)
+    try:
+        from bridges.railway_bridge import get_status as railway_status
+        rw = railway_status()
+        if rw.get("available"):
+            logger.info("🐙 Railway Bridge ativo: %d skills, %d patterns", rw.get("total_skills", 0), rw.get("total_patterns", 0))
+        else:
+            logger.info("🐙 Railway Bridge disponível (aguardando RAILWAY_API_TOKEN)")
+    except Exception as e:
+        logger.warning("Railway Bridge não carregado: %s", e)
+
     # Iniciar Webhook Receiver (Railway HTTP)
     try:
         webhook_token = os.environ.get("WEBHOOK_TOKEN", "")

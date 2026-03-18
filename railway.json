@@ -1,0 +1,53 @@
+{
+    "project_id": "5cc28b14-c19b-44c2-b770-9701c69b4a68",
+    "environment_id": "f482051d-6475-47e1-a27e-d72c23769078",
+    "api_endpoint": "https://backboard.railway.app/graphql/v2",
+    "services": {
+        "kairos-sky": {
+            "description": "KAIROS Orchestrator (main.py + bot.py)",
+            "source": "github",
+            "port": 8080,
+            "healthcheck": "/health"
+        },
+        "mcp-server": {
+            "description": "Experia MCP Server (FastAPI, 16 tools)",
+            "source": "mcp_server/Dockerfile",
+            "port": 3001,
+            "healthcheck": "/health"
+        },
+        "n8n": {
+            "description": "n8n Workflow Automation",
+            "source": "template:n8n",
+            "port": 5678,
+            "status": "deployed"
+        },
+        "postgres": {
+            "description": "PostgreSQL 15 (shared by all services)",
+            "source": "template:postgres",
+            "status": "deployed"
+        },
+        "evolution-api": {
+            "description": "Evolution API (WhatsApp via atendai/evolution-api)",
+            "source": "docker:atendai/evolution-api:latest",
+            "port": 8080,
+            "healthcheck": "/health"
+        },
+        "railway-bridge": {
+            "description": "Railway API Bridge (FastAPI, GQL client)",
+            "source": "bridges/railway_gql.py",
+            "port": 3002,
+            "healthcheck": "/health"
+        }
+    },
+    "internal_networking": {
+        "note": "Railway internal networking allows services to communicate via service name (e.g., http://postgres:5432, http://n8n:5678)",
+        "connections": [
+            "mcp-server -> postgres (DATABASE_URL)",
+            "mcp-server -> n8n (N8N_URL)",
+            "n8n -> postgres (DB_POSTGRESDB_HOST)",
+            "evolution-api -> postgres (DATABASE_CONNECTION_URI)",
+            "kairos-sky -> mcp-server (MCP_SERVER_URL)",
+            "kairos-sky -> railway-bridge (RAILWAY_BRIDGE_URL)"
+        ]
+    }
+}
